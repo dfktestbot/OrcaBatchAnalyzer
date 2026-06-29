@@ -21,8 +21,9 @@ When you launch `python app.py`, the Tkinter graphical interface will open.
 ### Step 2: Configure Slicing Profiles
 The dropdown menus automatically scan your local OrcaSlicer installation at runtime to find your personal, custom profiles. 
 - Select your target **Printer** model.
-- Select your desired **Process** (e.g., layer height, infill settings).
+- Select your desired **Process**
 - Select your active **Filament** profile.
+- **Note**: these config settings are all pulled directly from your local orca slicer instance and mirror whatever settings you have chosen there.
 
 ### Step 3: Run the Pipeline
 Click the **START PROCESSING BATCH ANALYSIS** button at the bottom. 
