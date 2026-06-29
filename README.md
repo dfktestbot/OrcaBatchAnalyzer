@@ -1,83 +1,148 @@
 # OrcaBatchAnalyzer
 
-OrcaBatchAnalyzer is a desktop application that automates batch slicing with OrcaSlicer.
+OrcaBatchAnalyzer is a Windows desktop application that automates batch slicing with OrcaSlicer.
 
-Instead of manually opening, configuring, and slicing every model individually, OrcaBatchAnalyzer uses your existing OrcaSlicer installation and profile settings to batch process one or hundreds of STL files, then generates a production-ready summary of print time and material usage.
+Instead of manually opening, configuring, and slicing every model individually, OrcaBatchAnalyzer uses your existing OrcaSlicer installation and profiles to batch process one or hundreds of STL files, then generates a production-ready report of print time and material usage.
 
-No printer profiles need to be exported, edited, or maintained separately—the application automatically discovers the profiles already configured in your OrcaSlicer installation.
+No printer profiles need to be exported. The application automatically discovers the printer, process, and filament profiles already configured in OrcaSlicer.
 
 ---
 
 # Features
 
 * Automatically detects your OrcaSlicer installation
-* Automatically discovers your existing printer, process, and filament profiles
-* Slice a single STL file or an entire directory of STL files
+* Automatically loads your existing printer, process, and filament profiles
+* Slice a single STL file or an entire folder of STL files
 * Recursively process subfolders
 * Automatically orient models before slicing
-* Choose between two quantity strategies:
+* Two quantity modes:
 
   * **Flat Multiplier** – apply the same quantity to every model
-  * **Manifest File** – specify different quantities for individual models using a simple text file
+  * **Manifest File** – assign different quantities to individual models
 * Generates G-code for every successfully processed model
-* Produces a production summary CSV for the entire batch
-* Efficiently processes large batches without loading every generated G-code file into memory at once
+* Produces a production summary spreadsheet (`Results.csv`)
+* Calculates total print time, setup time, and material usage for the entire batch
+* Efficiently processes large batches without excessive memory usage
 
 ---
 
 # Requirements
 
-* Windows
+Before using OrcaBatchAnalyzer, install:
+
+* Windows 10 or Windows 11
 * Python 3.11 or newer
-* OrcaSlicer installed and configured
+* Git
+* OrcaSlicer
 
 ---
 
 # Installation
 
-Clone the repository together with its required submodule:
+## 1. Open PowerShell
 
-```bash
-git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git
-```
-
-If you already cloned the repository without submodules, initialize them with:
-
-```bash
-git submodule update --init --recursive
-```
-
-Currently, no additional third-party Python packages are required beyond a standard Python installation.
+Press **Win + X** and choose **Windows PowerShell** or **Terminal**.
 
 ---
 
-# Getting Started
+## 2. Clone the repository
 
-1. Install and configure OrcaSlicer normally.
-2. Launch OrcaBatchAnalyzer:
+Run:
 
-```bash
+```powershell
+git clone --recurse-submodules https://github.com/<your-username>/OrcaBatchAnalyzer.git
+```
+
+If you already cloned the repository without the submodule, run:
+
+```powershell
+git submodule update --init --recursive
+```
+
+---
+
+## 3. Open the project folder
+
+```powershell
+cd OrcaBatchAnalyzer
+```
+
+---
+
+## 4. Verify Python is installed
+
+```powershell
+python --version
+```
+
+You should see something similar to:
+
+```text
+Python 3.11.x
+```
+
+---
+
+## 5. Launch the application
+
+```powershell
 python app.py
 ```
 
-3. The application automatically loads your available:
+If everything is installed correctly, the OrcaBatchAnalyzer window will open.
+
+---
+
+# First-Time Setup
+
+The first time the application starts:
+
+1. It automatically searches for your OrcaSlicer installation.
+2. It automatically loads your available:
 
    * Printer profiles
    * Process profiles
    * Filament profiles
+3. Select the profiles you wish to use.
 
-4. Select the profiles you want to use.
+No profile export or additional configuration is required.
 
-5. Select either:
+---
 
-   * A single STL file, or
-   * A folder containing STL files (processed recursively).
+# Using OrcaBatchAnalyzer
 
-6. Choose a quantity strategy.
+## Step 1
 
-### Option 1 – Flat Multiplier
+Choose your:
 
-Apply the same quantity to every discovered model.
+* Printer
+* Process
+* Filament
+
+from the dropdown menus.
+
+---
+
+## Step 2
+
+Select your input.
+
+You may choose:
+
+* a single STL file, or
+* a folder containing STL files.
+
+Folders are searched recursively.
+
+---
+
+## Step 3
+
+Choose how quantities should be assigned.
+
+### Flat Multiplier
+
+Every model receives the same quantity.
 
 Example:
 
@@ -91,9 +156,17 @@ Quantity = 5
 500 total printed parts
 ```
 
-### Option 2 – Manifest File
+---
 
-Place a file named `quantities.txt` inside the selected input folder.
+### Manifest File
+
+Place a file named:
+
+```
+quantities.txt
+```
+
+inside the selected input folder.
 
 Example:
 
@@ -103,55 +176,113 @@ bracket.stl,2
 cover.stl,25
 ```
 
-Any model not listed will automatically default to a quantity of **1**.
+Models not listed automatically default to a quantity of **1**.
 
-7. Choose an output folder.
+---
 
-8. Click **Start Processing Batch Analysis**.
+## Step 4
+
+Choose an output folder.
+
+---
+
+## Step 5
+
+Click:
+
+**Start Processing Batch Analysis**
+
+The application will automatically:
+
+* prepare the profiles
+* slice every model
+* calculate production statistics
+* generate the final report
 
 ---
 
 # Output
 
-The selected output directory contains:
+The selected output directory will contain:
 
 ```text
 Output/
 
 ├── Results.csv
 └── Gcode/
-    ├── ...
 ```
 
-`Results.csv` contains production information for every successfully processed model, including:
+`Results.csv` includes:
 
 * Model name
 * Quantity
 * Estimated slicer print time
 * Machine setup time
 * Total unit time
-* Scaled production time
+* Total production time
 * Total filament required (grams)
 * Processing status
 
-A final **TOTALS** row summarizes the entire batch, including:
+A final **TOTALS** row summarizes:
 
-* Total models processed
-* Total quantity requested
-* Total slicer print time
-* Total machine setup time
+* Total models
+* Total quantity
+* Total slicer time
+* Total setup time
 * Total production time
 * Total filament required
 
 ---
 
-# Notes
+# Troubleshooting
 
-* Your OrcaSlicer configuration is **never modified**.
-* The application automatically reads your existing OrcaSlicer profiles.
-* Temporary files are generated only while processing and are cleaned up automatically.
-* Automatic model orientation is enabled by default.
-* Individual processing failures do not stop the remainder of the batch from completing.
+## `python` is not recognized
+
+Python is either not installed or was not added to your system PATH.
+
+Download Python:
+
+https://www.python.org/downloads/
+
+During installation, enable:
+
+> **Add python.exe to PATH**
+
+Restart PowerShell after installation.
+
+---
+
+## `git` is not recognized
+
+Download Git for Windows:
+
+https://git-scm.com/download/win
+
+Restart PowerShell after installation.
+
+---
+
+## The application cannot find OrcaSlicer
+
+Install OrcaSlicer normally and launch the application again.
+
+If automatic detection fails, browse to:
+
+```
+C:\Program Files\OrcaSlicer\orca-slicer.exe
+```
+
+---
+
+## The application reports missing submodules
+
+Run:
+
+```powershell
+git submodule update --init --recursive
+```
+
+Then restart the application.
 
 ---
 
@@ -163,17 +294,14 @@ Current functionality includes:
 
 * Automatic OrcaSlicer detection
 * Automatic profile discovery
-* Batch STL processing
-* Quantity scaling
-* Recursive directory processing
 * Native OrcaSlicer CLI integration
+* Batch STL processing
+* Recursive folder processing
+* Flat and manifest quantity strategies
+* Automatic model orientation
 * Production summary generation
 
-Planned improvements include:
-
-* Standalone Windows executable
-* Option to load generic default settings
-* more as things come up
+Future updates will focus on additional print-setting overrides, expanded reporting, standalone Windows releases, and further workflow improvements.
 
 ---
 
@@ -187,4 +315,3 @@ When reporting an issue, please include:
 * Python version
 * Windows version
 * Steps to reproduce the issue
-
