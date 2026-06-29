@@ -50,7 +50,7 @@ Press **Win + X** and choose **Windows PowerShell** or **Terminal**.
 Run:
 
 ```powershell
-git clone --recurse-submodules https://github.com/<your-username>/OrcaBatchAnalyzer.git
+git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git
 ```
 
 If you already cloned the repository without the submodule, run:
