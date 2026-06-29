@@ -10,8 +10,8 @@ class AnalyzerGUI(tk.Tk):
         self.run_pipeline_callback = run_pipeline_callback
         
         self.title("Orca Batch Analyzer")
-        self.geometry("650x580")
-        self.minsize(600, 520)
+        self.geometry("680x600")
+        self.minsize(650, 540)
         
         self.style = ttk.Style(self)
         self.style.theme_use('vista' if 'vista' in self.style.theme_names() else 'default')
@@ -25,7 +25,7 @@ class AnalyzerGUI(tk.Tk):
         self.process_profile = tk.StringVar()
         self.filament_profile = tk.StringVar()
         
-        # New Hybrid Quantity Configuration Variables
+        # Hybrid Quantity Configuration Variables
         self.quantity_mode = tk.StringVar(value="Flat Multiplier")
         self.flat_quantity = tk.IntVar(value=1)
         
@@ -41,57 +41,59 @@ class AnalyzerGUI(tk.Tk):
         path_frame.pack(fill=tk.X, pady=5)
         
         # Orca Exe
-        ttk.Label(path_frame, text="OrcaSlicer Exe:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(path_frame, textvariable=self.orca_exe_path, width=50).grid(row=0, column=1, pady=2, padx=5)
-        ttk.Button(path_frame, text="Browse", command=self._browse_orca).grid(row=0, column=2, pady=2)
+        ttk.Label(path_frame, text="OrcaSlicer Exe:").grid(row=0, column=0, sticky=tk.W, pady=4)
+        ttk.Entry(path_frame, textvariable=self.orca_exe_path, width=52).grid(row=0, column=1, pady=4, padx=5)
+        ttk.Button(path_frame, text="Browse", command=self._browse_orca).grid(row=0, column=2, pady=4, padx=2)
         
         # Input STL Target
-        ttk.Label(path_frame, text="Input STL File or Folder:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(path_frame, textvariable=self.input_path, width=50).grid(row=1, column=1, pady=2, padx=5)
+        ttk.Label(path_frame, text="Input STL File or Folder:").grid(row=1, column=0, sticky=tk.W, pady=4)
+        ttk.Entry(path_frame, textvariable=self.input_path, width=52).grid(row=1, column=1, pady=4, padx=5)
         
+        # Expanded button grid frame weights to resolve text clipping
         btn_frame = ttk.Frame(path_frame)
-        btn_frame.grid(row=1, column=2, sticky=tk.W)
-        ttk.Button(btn_frame, text="File", width=4, command=self._browse_stl_file).pack(side=tk.LEFT, padx=1)
-        ttk.Button(btn_frame, text="Folder", width=5, command=self._browse_stl_folder).pack(side=tk.LEFT, padx=1)
+        btn_frame.grid(row=1, column=2, sticky=tk.W, pady=4, padx=2)
+        ttk.Button(btn_frame, text="File", width=6, command=self._browse_stl_file).pack(side=tk.LEFT, padx=1)
+        ttk.Button(btn_frame, text="Folder", width=8, command=self._browse_stl_folder).pack(side=tk.LEFT, padx=1)
 
         # Output Target
-        ttk.Label(path_frame, text="Analysis Output Dir:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(path_frame, textvariable=self.output_dir, width=50).grid(row=2, column=1, pady=2, padx=5)
-        ttk.Button(path_frame, text="Browse", command=self._browse_output).grid(row=2, column=2, pady=2)
+        ttk.Label(path_frame, text="Analysis Output Dir:").grid(row=2, column=0, sticky=tk.W, pady=4)
+        ttk.Entry(path_frame, textvariable=self.output_dir, width=52).grid(row=2, column=1, pady=4, padx=5)
+        ttk.Button(path_frame, text="Browse", command=self._browse_output).grid(row=2, column=2, pady=4, padx=2)
 
         # --- Section 2: Profiles & Multipliers ---
         self.profile_frame = ttk.LabelFrame(main_frame, text=" 2. Slicing Config & Batch Quantities ", padding="10")
         self.profile_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(self.profile_frame, text="Printer Config:").grid(row=0, column=0, sticky=tk.W, pady=4)
-        self.cb_printer = ttk.Combobox(self.profile_frame, textvariable=self.printer_profile, state="readonly", width=47)
-        self.cb_printer.grid(row=0, column=1, pady=4, padx=5)
+        self.cb_printer = ttk.Combobox(self.profile_frame, textvariable=self.printer_profile, state="readonly", width=50)
+        self.cb_printer.grid(row=0, column=1, columnspan=2, pady=4, padx=5, sticky=tk.W)
         
         ttk.Label(self.profile_frame, text="Slicing Process:").grid(row=1, column=0, sticky=tk.W, pady=4)
-        self.cb_process = ttk.Combobox(self.profile_frame, textvariable=self.process_profile, state="readonly", width=47)
-        self.cb_process.grid(row=1, column=1, pady=4, padx=5)
+        self.cb_process = ttk.Combobox(self.profile_frame, textvariable=self.process_profile, state="readonly", width=50)
+        self.cb_process.grid(row=1, column=1, columnspan=2, pady=4, padx=5, sticky=tk.W)
         
         ttk.Label(self.profile_frame, text="Material Filament:").grid(row=2, column=0, sticky=tk.W, pady=4)
-        self.cb_filament = ttk.Combobox(self.profile_frame, textvariable=self.filament_profile, state="readonly", width=47)
-        self.cb_filament.grid(row=2, column=1, pady=4, padx=5)
+        self.cb_filament = ttk.Combobox(self.profile_frame, textvariable=self.filament_profile, state="readonly", width=50)
+        self.cb_filament.grid(row=2, column=1, columnspan=2, pady=4, padx=5, sticky=tk.W)
         
-        # Quantity Strategy Configuration Row
+        # Quantity Strategy Dropdown
         ttk.Label(self.profile_frame, text="Quantity Strategy:").grid(row=3, column=0, sticky=tk.W, pady=4)
-        self.cb_qty_mode = ttk.Combobox(self.profile_frame, textvariable=self.quantity_mode, values=["Flat Multiplier", "Per-Model Manifest File"], state="readonly", width=20)
+        self.cb_qty_mode = ttk.Combobox(self.profile_frame, textvariable=self.quantity_mode, values=["Flat Multiplier", "Per-Model Manifest File"], state="readonly", width=25)
         self.cb_qty_mode.grid(row=3, column=1, sticky=tk.W, pady=4, padx=5)
         self.cb_qty_mode.bind("<<ComboboxSelected>>", self._toggle_qty_visibility)
         
-        # Dynamic Multiplier Value Input Box
+        # Relocated dynamic fallback entry components down onto an independent grid row layout (Row 4)
         self.lbl_flat_qty = ttk.Label(self.profile_frame, text="Copies per Model:")
-        self.lbl_flat_qty.grid(row=3, column=1, sticky=tk.E, pady=4, padx=90)
-        self.ent_flat_qty = ttk.Entry(self.profile_frame, textvariable=self.flat_quantity, width=8)
-        self.ent_flat_qty.grid(row=3, column=1, sticky=tk.E, pady=4)
+        self.lbl_flat_qty.grid(row=4, column=0, sticky=tk.W, pady=4)
+        
+        self.ent_flat_qty = ttk.Entry(self.profile_frame, textvariable=self.flat_quantity, width=10)
+        self.ent_flat_qty.grid(row=4, column=1, sticky=tk.W, pady=4, padx=5)
 
         # --- Section 3: Status Console ---
         console_frame = ttk.LabelFrame(main_frame, text=" Execution Progress Logs ", padding="5")
         console_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        self.txt_log = tk.Text(console_frame, height=4, state=tk.DISABLED, background="#f4f4f4", wrap=tk.WORD)
+        self.txt_log = tk.Text(console_frame, height=5, state=tk.DISABLED, background="#f4f4f4", wrap=tk.WORD)
         self.txt_log.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
         
         scroll = ttk.Scrollbar(console_frame, command=self.txt_log.yview)
@@ -110,7 +112,7 @@ class AnalyzerGUI(tk.Tk):
         self.update_idletasks()
 
     def _toggle_qty_visibility(self, event=None):
-        """Hides or reveals the numeric text entry field based on selected strategy mode."""
+        """Hides or reveals the numeric entry field row based on the selected strategy."""
         if self.quantity_mode.get() == "Flat Multiplier":
             self.lbl_flat_qty.grid()
             self.ent_flat_qty.grid()
