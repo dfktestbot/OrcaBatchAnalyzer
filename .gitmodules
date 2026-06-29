@@ -1,0 +1,3 @@
+[submodule "vendor/orcaslicer-filament-tool"]
+	path = vendor/orcaslicer-filament-tool
+	url = https://github.com/stephenfeather/orcaslicer-filament-tool
