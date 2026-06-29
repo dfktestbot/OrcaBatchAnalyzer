@@ -38,7 +38,7 @@ No printer profiles need to be exported, edited, or maintained separately—the 
 Clone the repository together with its required submodule:
 
 ```bash
-git clone --recurse-submodules https://github.com/<your-username>/OrcaBatchAnalyzer.git
+git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git
 ```
 
 If you already cloned the repository without submodules, initialize them with:
