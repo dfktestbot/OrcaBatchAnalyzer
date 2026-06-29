@@ -1,14 +1,15 @@
 import csv
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 import config
 
 class ProductionReporter:
-    """Compiles individual matrix evaluations into standard production CSV sheets."""
+    """Compiles individual matrix evaluations into streamlined print production CSV sheets."""
 
     @staticmethod
     def format_seconds(seconds: int) -> str:
-        """Converts raw integers back into human scannable formats."""
+        """Converts raw integers back into human scannable layouts."""
         h = seconds // 3600
         m = (seconds % 3600) // 60
         s = seconds % 60
@@ -19,51 +20,129 @@ class ProductionReporter:
         return " ".join(parts)
 
     @staticmethod
-    def safely_cast_float(value: str) -> float:
+    def safely_cast_float(value: Any) -> float:
         """Protects math pipelines against unparseable string tokens."""
         try:
             return float(value)
         except (ValueError, TypeError):
             return 0.0
 
-    def generate_summary_row(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Aggregates all successful analysis entries into an overall summary block."""
-        successful = [r for r in results if r["status"] == "success"]
+    def _load_manifest_quantities(self, input_source_path: Path) -> Dict[str, int]:
+        """
+        Parses an optional 'quantities.txt' manifest file inside the input path.
+        Expected line format: bracket_v2.stl, 5
+        """
+        manifest_map = {}
+        target_dir = input_source_path if input_source_path.is_dir() else input_source_path.parent
+        manifest_file = target_dir / "quantities.txt"
+        
+        if manifest_file.exists():
+            try:
+                with open(manifest_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if "," in line:
+                            parts = line.strip().split(",", 1)
+                            stl_name = parts[0].strip().lower()
+                            try:
+                                qty = int(parts[1].strip())
+                                if qty >= 1:
+                                    manifest_map[stl_name] = qty
+                            except ValueError:
+                                continue
+            except Exception as e:
+                print(f"[!] Error reading quantities.txt manifest file: {e}")
+                
+        return manifest_map
 
-        total_seconds = sum(int(r.get("print_time_seconds", 0)) for r in successful)
-        total_mm = sum(self.safely_cast_float(r.get("filament_mm")) for r in successful)
-        total_cm3 = sum(self.safely_cast_float(r.get("filament_cm3")) for r in successful)
-        total_g = sum(self.safely_cast_float(r.get("filament_g")) for r in successful)
-        total_cost = sum(self.safely_cast_float(r.get("filament_cost")) for r in successful)
-
+    def generate_summary_row(self, results: List[Dict[str, Any]], total_qty: int, total_slicer_secs: int, total_overhead_secs: int, total_g: float) -> Dict[str, Any]:
+        """Compiles the final aggregation totals block."""
+        successful_count = len([r for r in results if r.get("status") == "success"])
+        total_combined_secs = total_slicer_secs + total_overhead_secs
+        
         return {
-            "model": "TOTAL",
-            "relative_path": "",
-            "print_time": self.format_seconds(total_seconds),
-            "print_time_seconds": total_seconds,
-            "filament_mm": f"{total_mm:.2f}",
-            "filament_cm3": f"{total_cm3:.2f}",
-            "filament_g": f"{total_g:.2f}",
-            "filament_cost": f"{total_cost:.2f}",
-            "gcode_path": "",
-            "status": f"{len(successful)} successful / {len(results) - len(successful)} failed",
-            "error": ""
+            "Model Name": "TOTALS",
+            "Qty": total_qty,
+            "Slicer Print Time": self.format_seconds(total_slicer_secs),
+            "Machine Setup Constant": self.format_seconds(total_overhead_secs),
+            "Total Unit Time": "",
+            "Scaled Total Time": self.format_seconds(total_combined_secs),
+            "Total Filament (g)": f"{total_g:.1f}g",
+            "status": f"{successful_count} passed / {len(results) - successful_count} failed"
         }
 
-    def write_csv_output(self, results: List[Dict[str, Any]]) -> Path:
-        """Writes compiled data rows neatly out to disk inside standard output folders."""
+    def write_csv_output(self, results: List[Dict[str, Any]], input_path_str: str, mode: str, fallback_flat_qty: int) -> Path:
+        """Processes, maps quantities via flat or manifest files, attaches constants, and outputs rows."""
         csv_path = config.OUTPUT_DIR / "results.csv"
-        rows = results + [self.generate_summary_row(results)]
+        ENDER3_OVERHEAD_SECS = 300 
+        
+        manifest_map = {}
+        if mode == "Per-Model Manifest File":
+            manifest_map = self._load_manifest_quantities(Path(input_path_str))
+        
+        formatted_rows = []
+        total_qty = 0
+        total_slicer_secs = 0
+        total_overhead_secs = 0
+        total_g = 0.0
+
+        for run in results:
+            model_filename = run.get("model", "Unknown")
+            
+            # Determine appropriate quantity using requested strategy
+            if mode == "Per-Model Manifest File":
+                qty = manifest_map.get(model_filename.lower(), 1)  # Fallback to 1 if missing from text document
+            else:
+                qty = int(fallback_flat_qty)
+
+            if run.get("status") == "success":
+                raw_slicer_secs = int(run.get("print_time_seconds", 0))
+                raw_grams = self.safely_cast_float(run.get("filament_g", 0.0))
+                
+                # Math overhead configurations
+                unit_total_secs = raw_slicer_secs + ENDER3_OVERHEAD_SECS
+                scaled_total_secs = unit_total_secs * qty
+                scaled_grams = raw_grams * qty
+                
+                # Accumulate systems parameters
+                total_qty += qty
+                total_slicer_secs += (raw_slicer_secs * qty)
+                total_overhead_secs += (ENDER3_OVERHEAD_SECS * qty)
+                total_g += scaled_grams
+                
+                formatted_rows.append({
+                    "Model Name": model_filename,
+                    "Qty": qty,
+                    "Slicer Print Time": self.format_seconds(raw_slicer_secs),
+                    "Machine Setup Constant": self.format_seconds(ENDER3_OVERHEAD_SECS),
+                    "Total Unit Time": self.format_seconds(unit_total_secs),
+                    "Scaled Total Time": self.format_seconds(scaled_total_secs),
+                    "Total Filament (g)": f"{scaled_grams:.1f}g",
+                    "status": "success"
+                })
+            else:
+                formatted_rows.append({
+                    "Model Name": model_filename,
+                    "Qty": qty,
+                    "Slicer Print Time": "--",
+                    "Machine Setup Constant": "--",
+                    "Total Unit Time": "--",
+                    "Scaled Total Time": "--",
+                    "Total Filament (g)": "--",
+                    "status": f"failed: {run.get('error', 'Unknown Error')}"
+                })
+
+        summary_row = self.generate_summary_row(results, total_qty, total_slicer_secs, total_overhead_secs, total_g)
 
         fieldnames = [
-            "model", "relative_path", "print_time", "print_time_seconds",
-            "filament_mm", "filament_cm3", "filament_g", "filament_cost",
-            "gcode_path", "status", "error"
+            "Model Name", "Qty", "Slicer Print Time", "Machine Setup Constant",
+            "Total Unit Time", "Scaled Total Time", "Total Filament (g)", "status"
         ]
 
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(formatted_rows)
+            writer.writerow({})
+            writer.writerow(summary_row)
 
         return csv_path
