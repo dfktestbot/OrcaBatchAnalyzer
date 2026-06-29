@@ -22,6 +22,11 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
     orca_exe = Path(ui.orca_exe_path.get())
     input_target = Path(ui.input_path.get())
     
+    # Extract hybrid quantity configuration parameters from UI state variables
+    strategy_mode = ui.quantity_mode.get()
+    flat_fallback = ui.flat_quantity.get()
+    source_input_str = ui.input_path.get()
+    
     if input_target.is_file():
         if input_target.suffix.lower() == '.stl':
             stl_models = [input_target]
@@ -76,17 +81,41 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
                     "filament_g": "", "filament_cost": "", "gcode_path": "", "status": "failed", "error": str(inner_err)
                 })
 
-        csv_out = reporter.write_csv_output(analysis_results)
-        summary_row = reporter.generate_summary_row(analysis_results)
+        # Generate updated streamlined CSV using strategy variables
+        csv_out = reporter.write_csv_output(
+            analysis_results,
+            input_path_str=source_input_str,
+            mode=strategy_mode,
+            fallback_flat_qty=flat_fallback
+        )
         
+        # Pull layout configurations for the completion notification banner
+        # Pass a temporary calculation loop to mirror summary data definitions cleanly
+        manifest_map = {}
+        if strategy_mode == "Per-Model Manifest File":
+            manifest_map = reporter._load_manifest_quantities(Path(source_input_str))
+            
+        final_qty = 0
+        final_secs = 0
+        final_grams = 0.0
+        ENDER3_OVERHEAD_SECS = 300
+
+        for r in analysis_results:
+            if r.get("status") == "success":
+                m_qty = manifest_map.get(r["model"].lower(), flat_fallback) if strategy_mode == "Per-Model Manifest File" else flat_fallback
+                final_qty += m_qty
+                final_secs += (int(r.get("print_time_seconds", 0)) + ENDER3_OVERHEAD_SECS) * m_qty
+                final_grams += reporter.safely_cast_float(r.get("filament_g", 0.0)) * m_qty
+
         ui.log("\n====== Run Execution Completed ======")
         ui.log(f"[✓] Analysis sheet written to: {csv_out}")
         
         success_message = (
             f"Batch Analysis Completed Successfully!\n\n"
             f"Total Models Sliced: {len(analysis_results)}\n"
-            f"Total Production Time: {summary_row['print_time']}\n"
-            f"Total Filament Usage: {summary_row['filament_g']} g\n\n"
+            f"Total Calculated Run Copies: {final_qty}\n"
+            f"Total Production Time (With Setup): {reporter.format_seconds(final_secs)}\n"
+            f"Total Filament Usage: {final_grams:.1f} g\n\n"
             f"Results sheet saved to:\n{csv_out}"
         )
         messagebox.showinfo("Batch Complete", success_message)
