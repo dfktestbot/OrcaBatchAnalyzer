@@ -49,6 +49,15 @@ class ProductionReporter:
     def write_csv_output(self, analysis_results, input_path_str, mode, fallback_flat_qty):
         output_csv_path = Path(config.OUTPUT_DIR) / "results.csv"
         
+        # Load manifest mapping if selected mode dictates it
+        manifest_map = {}
+        if mode == "Per-Model Manifest File":
+            manifest_map = self._load_manifest_quantities(Path(input_path_str))
+        
+        # Constants
+        SETUP_OVERHEAD_SECS = 300  # 5-minute preheat/calibration overhead
+        SETUP_OVERHEAD_STR = "00:05:00"
+        
         # 1. Bucket assets safely into Root vs Subfolders
         root_files = []
         subfolder_groups = {}
@@ -68,37 +77,103 @@ class ProductionReporter:
             writer = csv.writer(f)
             
             # Standard Column Headers
-            writer.writerow(["Model Name", "Qty", "Slicer Print Time", "Machine Setup Constant", "Total Unit Time", "Scaled Total Time", "Total Filament (g)", "status"])
+            writer.writerow([
+                "Model Name", "Qty", "Slicer Print Time", "Machine Setup Constant", 
+                "Total Unit Time", "Scaled Total Time", "Total Filament (g)", "status"
+            ])
             
             # --- BLOCK 1: LOOSE ROOT FILES ---
             if root_files:
                 writer.writerow([]) # Cushion row below column headers
                 for r in root_files:
-                    # Keep original model name clean for root level
-                    writer.writerow(self._build_row_data(r, r.get("model"), mode, fallback_flat_qty))
+                    model_key = r.get("model", "").lower()
+                    m_qty = manifest_map.get(model_key, fallback_flat_qty) if mode == "Per-Model Manifest File" else fallback_flat_qty
+                    
+                    raw_secs = int(r.get("print_time_seconds", 0)) if r.get("print_time_seconds") else 0
+                    unit_total_secs = raw_secs + SETUP_OVERHEAD_SECS if r.get("status") == "success" else 0
+                    scaled_total_secs = unit_total_secs * m_qty
+                    
+                    filament_g = self.safely_cast_float(r.get("filament_g", 0.0))
+                    scaled_filament = filament_g * m_qty if r.get("status") == "success" else 0.0
+                    
+                    writer.writerow([
+                        r.get("model"),
+                        m_qty,
+                        r.get("print_time", ""),
+                        SETUP_OVERHEAD_STR if r.get("status") == "success" else "",
+                        self.format_seconds(unit_total_secs) if r.get("status") == "success" else "",
+                        self.format_seconds(scaled_total_secs) if r.get("status") == "success" else "",
+                        f"{scaled_filament:.1f}" if r.get("status") == "success" else "",
+                        r.get("status", "failed")
+                    ])
             
             # --- BLOCK 2: SUBFOLDER BATCHES ---
             for folder_name, items in subfolder_groups.items():
                 writer.writerow([]) # Clear visual break before a new subfolder group block starts
                 writer.writerow([f"FOLDER: {folder_name}"]) # Section Header Row
                 
-                folder_qty = folder_secs = 0
+                folder_qty = 0
+                folder_secs = 0
                 folder_grams = 0.0
                 
                 for r in items:
-                    # Indent subfolder files visually using the tree character
+                    model_key = r.get("model", "").lower()
+                    m_qty = manifest_map.get(model_key, fallback_flat_qty) if mode == "Per-Model Manifest File" else fallback_flat_qty
+                    
+                    raw_secs = int(r.get("print_time_seconds", 0)) if r.get("print_time_seconds") else 0
+                    unit_total_secs = raw_secs + SETUP_OVERHEAD_SECS if r.get("status") == "success" else 0
+                    scaled_total_secs = unit_total_secs * m_qty
+                    
+                    filament_g = self.safely_cast_float(r.get("filament_g", 0.0))
+                    scaled_filament = filament_g * m_qty if r.get("status") == "success" else 0.0
+                    
                     indented_name = f"└── {r.get('model')}"
-                    writer.writerow(self._build_row_data(r, indented_name, mode, fallback_flat_qty))
+                    writer.writerow([
+                        indented_name,
+                        m_qty,
+                        r.get("print_time", ""),
+                        SETUP_OVERHEAD_STR if r.get("status") == "success" else "",
+                        self.format_seconds(unit_total_secs) if r.get("status") == "success" else "",
+                        self.format_seconds(scaled_total_secs) if r.get("status") == "success" else "",
+                        f"{scaled_filament:.1f}" if r.get("status") == "success" else "",
+                        r.get("status", "failed")
+                    ])
                     
                     if r.get("status") == "success":
-                        # ... your existing folder subtotal math accumulation goes here ...
-                        pass
+                        folder_qty += m_qty
+                        folder_secs += scaled_total_secs
+                        folder_grams += scaled_filament
                 
                 # Write out the group subtotal row right underneath its items
-                writer.writerow([f"SUBTOTAL: {folder_name}", folder_qty, "", "", "", folder_secs, folder_grams, ""])
+                writer.writerow([
+                    f"SUBTOTAL: {folder_name}", 
+                    folder_qty, "", "", "", 
+                    self.format_seconds(folder_secs), 
+                    f"{folder_grams:.1f}", ""
+                ])
             
             # --- BLOCK 3: GRAND TOTALS ---
             writer.writerow([]) # Clear break before the final grand calculations summary
-            # ... your existing grand totals row insertion logic goes here ...
+            
+            grand_qty = 0
+            grand_secs = 0
+            grand_grams = 0.0
+            
+            for r in analysis_results:
+                if r.get("status") == "success":
+                    model_key = r.get("model", "").lower()
+                    m_qty = manifest_map.get(model_key, fallback_flat_qty) if mode == "Per-Model Manifest File" else fallback_flat_qty
+                    
+                    raw_secs = int(r.get("print_time_seconds", 0)) if r.get("print_time_seconds") else 0
+                    grand_qty += m_qty
+                    grand_secs += (raw_secs + SETUP_OVERHEAD_SECS) * m_qty
+                    grand_grams += self.safely_cast_float(r.get("filament_g", 0.0)) * m_qty
+            
+            writer.writerow([
+                "GRAND TOTALS", 
+                grand_qty, "", "", "", 
+                self.format_seconds(grand_secs), 
+                f"{grand_grams:.1f}", ""
+            ])
             
         return output_csv_path
