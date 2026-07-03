@@ -2,7 +2,6 @@ import sys
 from pathlib import Path
 from tkinter import messagebox
 
-# Path safeguard for local routing
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
@@ -16,43 +15,42 @@ from core.parser import GCodeAnalyticParser
 from core.report import ProductionReporter
 
 def execute_analysis_workflow(ui: AnalyzerGUI):
-    ui.log("\n====== Starting Slicing & Extraction Loop ======")
-    config.ensure_directories()
-    
-    orca_exe = Path(ui.orca_exe_path.get())
-    input_target = Path(ui.input_path.get())
-    
-    # Extract hybrid quantity configuration parameters from UI state variables
-    strategy_mode = ui.quantity_mode.get()
-    flat_fallback = ui.flat_quantity.get()
-    source_input_str = ui.input_path.get()
-    
-    if input_target.is_file():
-        if input_target.suffix.lower() == '.stl':
-            stl_models = [input_target]
-            input_root_dir = input_target.parent
-        else:
-            ui.log("[!] Target file is not an STL file format.")
-            messagebox.showerror("Invalid File", "The selected item is not a valid .stl file layout.")
-            return
-    else:
-        stl_models = sorted(input_target.rglob("*.stl"))
-        input_root_dir = input_target
-
-    if not stl_models:
-        ui.log(f"[!] Target empty: No STL files located at: {input_target}")
-        messagebox.showwarning("No Models Found", "No .stl models were discovered in the target input selection.")
-        return
-
-    ui.log(f"[✓] Discovered target slice models: {len(stl_models)}")
-
     try:
+        ui.log("\n====== Starting Slicing & Extraction Loop ======")
+        config.ensure_directories()
+        
+        orca_exe = Path(ui.orca_exe_path.get())
+        input_target = Path(ui.input_path.get())
+        
+        strategy_mode = ui.quantity_mode.get()
+        flat_fallback = ui.flat_quantity.get()
+        source_input_str = ui.input_path.get()
+        
+        if input_target.is_file():
+            if input_target.suffix.lower() == '.stl':
+                stl_models = [input_target]
+                input_root_dir = input_target.parent
+            else:
+                ui.log("[!] Target file is not an STL file format.")
+                messagebox.showerror("Invalid File", "The selected item is not a valid .stl file layout.")
+                return
+        else:
+            stl_models = sorted(input_target.rglob("*.stl"))
+            input_root_dir = input_target
+
+        if not stl_models:
+            ui.log(f"[!] Target empty: No STL files located at: {input_target}")
+            messagebox.showwarning("No Models Found", "No .stl models were discovered in the target input selection.")
+            return
+
+        total_files = len(stl_models)
+        ui.log(f"[✓] Discovered target slice models: {total_files}")
+        ui.update_progress(0, total_files, "Starting Up...")
+
         # Load directories via configuration settings
         _, _, user_dir = config.get_orca_roaming_paths()
-        
         bundle_manager = OrcaProfileManager()
         
-        # Aligned to match the file path mapping signatures in core/bundle.py
         p_file, pr_file, f_file = bundle_manager.locate_profile_paths(
             user_dir, ui.printer_profile.get(), ui.process_profile.get(), ui.filament_profile.get()
         )
@@ -66,8 +64,10 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
         
         analysis_results = []
         
-        for model in stl_models:
+        for idx, model in enumerate(stl_models, start=1):
+            ui.update_progress(idx - 1, total_files, f"Slicing: {model.name}")
             ui.log(f"Processing Matrix Slice Target: {model.name}")
+            
             try:
                 gcode_path = slicer_engine.slice_stl(model, flat_printer, flat_process, flat_filament)
                 metrics = stats_parser.process_gcode_file(gcode_path, model, input_root_dir)
@@ -81,6 +81,9 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
                     "filament_g": "", "filament_cost": "", "gcode_path": "", "status": "failed", "error": str(inner_err)
                 })
 
+        # Complete progress bar tracking
+        ui.update_progress(total_files, total_files, "Compiling CSV Output...")
+
         # Generate updated streamlined CSV using strategy variables
         csv_out = reporter.write_csv_output(
             analysis_results,
@@ -89,8 +92,6 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
             fallback_flat_qty=flat_fallback
         )
         
-        # Pull layout configurations for the completion notification banner
-        # Pass a temporary calculation loop to mirror summary data definitions cleanly
         manifest_map = {}
         if strategy_mode == "Per-Model Manifest File":
             manifest_map = reporter._load_manifest_quantities(Path(source_input_str))
@@ -109,6 +110,7 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
 
         ui.log("\n====== Run Execution Completed ======")
         ui.log(f"[✓] Analysis sheet written to: {csv_out}")
+        ui.update_progress(total_files, total_files, "Completed Successfully!")
         
         success_message = (
             f"Batch Analysis Completed Successfully!\n\n"
@@ -122,7 +124,12 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
         
     except Exception as fatal_pipeline_error:
         ui.log(f"\n[!] Pipeline Processing Interrupted: {fatal_pipeline_error}")
+        ui.update_progress(0, 100, "Error Occurred")
         messagebox.showerror("Pipeline Error", f"A fatal error halted processing:\n{fatal_pipeline_error}")
+        
+    finally:
+        # Re-enabling the button safely back inside the main application loop context
+        ui.btn_run.configure(state=tk.NORMAL)
 
 def main():
     app = AnalyzerGUI(run_pipeline_callback=execute_analysis_workflow)
