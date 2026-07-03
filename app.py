@@ -1,4 +1,5 @@
 import sys
+import gc  # Imported for core memory cleaning optimization routines
 from pathlib import Path
 from tkinter import messagebox
 
@@ -16,7 +17,10 @@ from core.report import ProductionReporter
 
 def execute_analysis_workflow(ui: AnalyzerGUI):
     try:
-        ui.log("\n====== Starting Slicing & Extraction Loop ======")
+        ui.log("\n====== Starting Slicing & Extraction Loop ======", override_perf=True)
+        if ui.performance_mode.get():
+            ui.log("[OPTIMIZATION NOTICE] Performance Mode active. Live console reporting suspended to reduce process thread overhead.", override_perf=True)
+            
         config.ensure_directories()
         
         orca_exe = Path(ui.orca_exe_path.get())
@@ -31,7 +35,7 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
                 stl_models = [input_target]
                 input_root_dir = input_target.parent
             else:
-                ui.log("[!] Target file is not an STL file format.")
+                ui.log("[!] Target file is not an STL file format.", override_perf=True)
                 messagebox.showerror("Invalid File", "The selected item is not a valid .stl file layout.")
                 return
         else:
@@ -39,15 +43,14 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
             input_root_dir = input_target
 
         if not stl_models:
-            ui.log(f"[!] Target empty: No STL files located at: {input_target}")
+            ui.log(f"[!] Target empty: No STL files located at: {input_target}", override_perf=True)
             messagebox.showwarning("No Models Found", "No .stl models were discovered in the target input selection.")
             return
 
         total_files = len(stl_models)
-        ui.log(f"[✓] Discovered target slice models: {total_files}")
+        ui.log(f"[✓] Discovered target slice models: {total_files}", override_perf=True)
         ui.update_progress(0, total_files, "Starting Up...")
 
-        # Load directories via configuration settings
         _, _, user_dir = config.get_orca_roaming_paths()
         bundle_manager = OrcaProfileManager()
         
@@ -55,7 +58,7 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
             user_dir, ui.printer_profile.get(), ui.process_profile.get(), ui.filament_profile.get()
         )
         
-        ui.log("Executing background profile flattening configurations...")
+        ui.log("Executing background profile flattening configurations...", override_perf=True)
         flat_printer, flat_process, flat_filament = run_flattening_pipeline(p_file, pr_file, f_file)
         
         slicer_engine = OrcaSlicerEngine(orca_exe)
@@ -74,17 +77,19 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
                 analysis_results.append(metrics)
                 ui.log(f" -> Completed: {metrics['print_time']} | {metrics['filament_g']}g")
             except Exception as inner_err:
-                ui.log(f" [!] Slicing conversion failed on asset {model.name}: {inner_err}")
+                ui.log(f" [!] Slicing conversion failed on asset {model.name}: {inner_err}", override_perf=True)
                 analysis_results.append({
                     "model": model.name, "relative_path": str(model.relative_to(input_root_dir)),
                     "print_time": "", "print_time_seconds": 0, "filament_mm": "", "filament_cm3": "",
                     "filament_g": "", "filament_cost": "", "gcode_path": "", "status": "failed", "error": str(inner_err)
                 })
+                
+            # Performance mode explicit resource recovery sweep
+            if ui.performance_mode.get():
+                gc.collect()
 
-        # Complete progress bar tracking
         ui.update_progress(total_files, total_files, "Compiling CSV Output...")
 
-        # Generate updated streamlined CSV using strategy variables
         csv_out = reporter.write_csv_output(
             analysis_results,
             input_path_str=source_input_str,
@@ -108,8 +113,8 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
                 final_secs += (int(r.get("print_time_seconds", 0)) + ENDER3_OVERHEAD_SECS) * m_qty
                 final_grams += reporter.safely_cast_float(r.get("filament_g", 0.0)) * m_qty
 
-        ui.log("\n====== Run Execution Completed ======")
-        ui.log(f"[✓] Analysis sheet written to: {csv_out}")
+        ui.log("\n====== Run Execution Completed ======", override_perf=True)
+        ui.log(f"[✓] Analysis sheet written to: {csv_out}", override_perf=True)
         ui.update_progress(total_files, total_files, "Completed Successfully!")
         
         success_message = (
@@ -123,13 +128,13 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
         messagebox.showinfo("Batch Complete", success_message)
         
     except Exception as fatal_pipeline_error:
-        ui.log(f"\n[!] Pipeline Processing Interrupted: {fatal_pipeline_error}")
+        ui.log(f"\n[!] Pipeline Processing Interrupted: {fatal_pipeline_error}", override_perf=True)
         ui.update_progress(0, 100, "Error Occurred")
         messagebox.showerror("Pipeline Error", f"A fatal error halted processing:\n{fatal_pipeline_error}")
         
     finally:
-        # Re-enabling the button safely back inside the main application loop context
         ui.btn_run.configure(state=tk.NORMAL)
+        gc.collect()
 
 def main():
     app = AnalyzerGUI(run_pipeline_callback=execute_analysis_workflow)
