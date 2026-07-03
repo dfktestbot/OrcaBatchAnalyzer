@@ -2,6 +2,7 @@ import sys
 import gc  # Imported for core memory cleaning optimization routines
 from pathlib import Path
 from tkinter import messagebox
+import tkinter as tk
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
@@ -16,16 +17,19 @@ from core.parser import GCodeAnalyticParser
 from core.report import ProductionReporter
 
 def execute_analysis_workflow(ui: AnalyzerGUI):
+    is_perf_optimized = ui.performance_mode.get()
+    
     try:
-        ui.log("\n====== Starting Slicing & Extraction Loop ======", override_perf=True)
-        if ui.performance_mode.get():
-            ui.log("[OPTIMIZATION NOTICE] Performance Mode active. Live console reporting suspended to reduce process thread overhead.", override_perf=True)
+        if is_perf_optimized:
+            ui.log("\n[PERFORMANCE MODE ENGAGED]", override_perf=True)
+            ui.log("-> Live UI console logs suspended.\n-> Progress tracking isolated to the stationary status bar.", override_perf=True)
+        else:
+            ui.log("\n====== Starting Slicing & Extraction Loop ======")
             
         config.ensure_directories()
         
         orca_exe = Path(ui.orca_exe_path.get())
         input_target = Path(ui.input_path.get())
-        
         strategy_mode = ui.quantity_mode.get()
         flat_fallback = ui.flat_quantity.get()
         source_input_str = ui.input_path.get()
@@ -53,7 +57,6 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
 
         _, _, user_dir = config.get_orca_roaming_paths()
         bundle_manager = OrcaProfileManager()
-        
         p_file, pr_file, f_file = bundle_manager.locate_profile_paths(
             user_dir, ui.printer_profile.get(), ui.process_profile.get(), ui.filament_profile.get()
         )
@@ -64,7 +67,6 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
         slicer_engine = OrcaSlicerEngine(orca_exe)
         stats_parser = GCodeAnalyticParser()
         reporter = ProductionReporter()
-        
         analysis_results = []
         
         for idx, model in enumerate(stl_models, start=1):
@@ -84,12 +86,10 @@ def execute_analysis_workflow(ui: AnalyzerGUI):
                     "filament_g": "", "filament_cost": "", "gcode_path": "", "status": "failed", "error": str(inner_err)
                 })
                 
-            # Performance mode explicit resource recovery sweep
-            if ui.performance_mode.get():
+            if is_perf_optimized:
                 gc.collect()
 
         ui.update_progress(total_files, total_files, "Compiling CSV Output...")
-
         csv_out = reporter.write_csv_output(
             analysis_results,
             input_path_str=source_input_str,
