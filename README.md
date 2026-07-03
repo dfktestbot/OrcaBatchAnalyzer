@@ -96,7 +96,7 @@ If everything is installed correctly, the OrcaBatchAnalyzer window will open.
 ## * One click install
 
 ```powershell
-git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git && cd OrcaBatchAnalyzer && python app.py
+git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git ; cd OrcaBatchAnalyzer ; python app.py
 ```
 
 If everything is installed correctly, the OrcaBatchAnalyzer window will open.
@@ -260,7 +260,7 @@ A final **TOTALS** row summarizes the complete production run, including:
 # Troubleshooting
 
 ## Slicing completed but no G-code was generated
-`[!] Slicing conversion failed` or `CLI error`
+`[!] Slicing conversion failed` or `Slic3r::CLI::run found error`
 
 OrcaSlicer's command-line interface may reject a model without displaying a graphical error message.
 
