@@ -127,7 +127,7 @@ class ProductionReporter:
                     filament_g = self.safely_cast_float(r.get("filament_g", 0.0))
                     scaled_filament = filament_g * m_qty if r.get("status") == "success" else 0.0
                     
-                    indented_name = f"└── {r.get('model')}"
+                    indented_name = f"|-- {r.get('model')}"
                     writer.writerow([
                         indented_name,
                         m_qty,
