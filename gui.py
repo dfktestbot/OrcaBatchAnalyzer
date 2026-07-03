@@ -28,7 +28,7 @@ class AnalyzerGUI(tk.Tk):
         
         self.quantity_mode = tk.StringVar(value="Flat Multiplier")
         self.flat_quantity = tk.IntVar(value=1)
-        self.performance_mode = tk.BooleanVar(value=False) # Performance optimization flag
+        self.performance_mode = tk.BooleanVar(value=False) 
         
         self._build_ui()
         self._auto_load_system_profiles()
@@ -92,7 +92,6 @@ class AnalyzerGUI(tk.Tk):
         self.progress_frame = ttk.Frame(main_frame)
         self.progress_frame.pack(fill=tk.X, pady=6)
         
-        # Text alignment sitting above guarantees the bar never shifts width dynamically
         self.lbl_progress_txt = ttk.Label(self.progress_frame, text="Status: Idle", font=('TkDefaultFont', 9, 'bold'))
         self.lbl_progress_txt.pack(anchor=tk.W, pady=2)
         
@@ -116,6 +115,7 @@ class AnalyzerGUI(tk.Tk):
 
     def log(self, message: str, override_perf: bool = False):
         """Logs output to the screen, respects Performance Mode settings."""
+        print(message) 
         if self.performance_mode.get() and not override_perf:
             return
         self.txt_log.configure(state=tk.NORMAL)
