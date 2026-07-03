@@ -48,13 +48,12 @@ class ProductionReporter:
 
     def write_csv_output(self, results: list, input_path_str: str, mode: str, fallback_flat_qty: int) -> str:
         """
-        Compiles the production tracking spreadsheet with dynamic folder subtotals.
-        Rows are grouped by folder automatically due to the sorted path nature of the batch analyzer.
+        Compiles the production tracking spreadsheet with selective subfolders subtotals.
+        Root-level files are listed individually without generating an artificial subtotal group.
         """
         output_file = config.OUTPUT_DIR / "results.csv"
         ENDER3_OVERHEAD_SECS = 300
         
-        # Resolve tracking structures for manifest strategies
         input_root = Path(input_path_str)
         manifest_map = {}
         if mode == "Per-Model Manifest File" and input_root.is_dir():
@@ -79,7 +78,7 @@ class ProductionReporter:
             global_passed = 0
             global_failed = 0
 
-            # Subtotal trackers for the active directory block
+            # Subtotal trackers for active subdirectories
             current_folder_name = None
             sub_qty = 0
             sub_slicer_secs = 0
@@ -90,45 +89,48 @@ class ProductionReporter:
             sub_failed = 0
 
             def write_subtotal_row():
-                """Helper loop to write the current subdirectory's aggregated data."""
+                """Writes out accumulated metrics ONLY for genuine subfolders."""
+                # Safeguard: Never write a subtotal row for the root directory level
+                if current_folder_name == "Root Level":
+                    return
+                
                 writer.writerow([
                     f"SUBTOTAL: {current_folder_name}",
                     sub_qty,
                     self.format_seconds(sub_slicer_secs),
                     self.format_seconds(sub_setup_secs),
-                    "",  # Unit time is omitted for group balances
+                    "", 
                     self.format_seconds(sub_total_secs),
                     f"{sub_grams:.1f}g",
                     f"{sub_passed} passed / {sub_failed} failed"
                 ])
-                # Empty spacer row for clean readability between folders
-                writer.writerow([])
+                writer.writerow([]) # Clean visual spacer split
 
             for row in results:
-                # Deduce the direct folder group name based on relative path structure
+                # Deduce folder mapping relative paths
                 rel_path = row.get("relative_path", "")
                 if rel_path and "\\" in rel_path:
                     folder_part = rel_path.split("\\")[0]
                 elif rel_path and "/" in rel_path:
                     folder_part = rel_path.split("/")[0]
                 else:
-                    folder_part = "Root Directory"
+                    folder_part = "Root Level"
 
-                # If the folder changes, dump out the tracking metrics for the previous folder
+                # Trigger subtotal row when transitioning away from a subfolder
                 if current_folder_name is not None and current_folder_name != folder_part:
-                    if sub_qty > 0 or sub_failed > 0:
+                    if current_folder_name != "Root Level" and (sub_qty > 0 or sub_failed > 0):
                         write_subtotal_row()
-                    # Reset buckets for the next folder track
+                    
+                    # Reset subtotal buckets for the newly encountered directory bracket
                     sub_qty = sub_slicer_secs = sub_setup_secs = sub_total_secs = sub_passed = sub_failed = 0
                     sub_grams = 0.0
 
                 current_folder_name = folder_part
 
-                # Extract model data metrics safely
+                # Extract file metrics safely
                 is_success = row.get("status") == "success"
                 model_name = row.get("model", "Unknown")
                 
-                # Deduce quantity targeting via hybrid mapping checks
                 qty = fallback_flat_qty
                 if mode == "Per-Model Manifest File":
                     qty = manifest_map.get(model_name.lower(), fallback_flat_qty)
@@ -144,29 +146,25 @@ class ProductionReporter:
                 grams_raw = self.safely_cast_float(row.get("filament_g", 0.0))
                 scaled_grams = grams_raw * qty
 
-                # Update current subtotal buckets
+                # Update subtotal tracks (running silently behind root files too, but won't print)
                 sub_qty += qty if is_success else 0
                 sub_slicer_secs += scaled_slicer_secs
                 sub_setup_secs += scaled_setup_secs
                 sub_total_secs += scaled_total_secs
                 sub_grams += scaled_grams
-                if is_success:
-                    sub_passed += 1
-                else:
-                    sub_failed += 1
+                if is_success: sub_passed += 1
+                else: sub_failed += 1
 
-                # Update absolute global trackers
+                # Update global batch counts
                 global_qty += qty if is_success else 0
                 global_slicer_secs += scaled_slicer_secs
                 global_setup_secs += scaled_setup_secs
                 global_total_secs += scaled_total_secs
                 global_grams += scaled_grams
-                if is_success:
-                    global_passed += 1
-                else:
-                    global_failed += 1
+                if is_success: global_passed += 1
+                else: global_failed += 1
 
-                # Write out individual asset line item
+                # Append asset rows
                 writer.writerow([
                     model_name,
                     qty if is_success else "",
@@ -178,11 +176,11 @@ class ProductionReporter:
                     row.get("status", "failed") if is_success else f"failed: {row.get('error', 'Unknown Error')}"
                 ])
 
-            # Write out the very final folder subtotal row before closing global loops
-            if current_folder_name is not None and (sub_qty > 0 or sub_failed > 0):
+            # Catch trailing subtotal brackets if the final files processed were inside a subfolder
+            if current_folder_name is not None and current_folder_name != "Root Level" and (sub_qty > 0 or sub_failed > 0):
                 write_subtotal_row()
 
-            # Append ultimate global summary line items
+            # Final Grand Totals row configuration
             writer.writerow([])
             writer.writerow([
                 "GRAND TOTALS",
