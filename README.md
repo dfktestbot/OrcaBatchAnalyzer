@@ -2,9 +2,9 @@
 
 OrcaBatchAnalyzer is a Windows desktop application that automates batch slicing with OrcaSlicer.
 
-Instead of manually opening, configuring, and slicing every model individually, OrcaBatchAnalyzer uses your existing OrcaSlicer installation and profiles to batch process one or hundreds of STL files, then generates a production-ready report of print time and material usage.
+Instead of manually opening, configuring, and slicing every model individually, OrcaBatchAnalyzer uses your existing OrcaSlicer installation and profiles to batch process one or hundreds of STL files, then generates a production-ready report containing print time, material usage, and batch statistics.
 
-No printer profiles need to be exported. The application automatically discovers the printer, process, and filament profiles already configured in OrcaSlicer.
+No printer profiles need to be exported or maintained separately. The application automatically discovers the printer, process, and filament profiles already configured in OrcaSlicer.
 
 ---
 
@@ -18,11 +18,13 @@ No printer profiles need to be exported. The application automatically discovers
 * Two quantity modes:
 
   * **Flat Multiplier** – apply the same quantity to every model
-  * **Manifest File** – assign different quantities to individual models
+  * **Manifest File** – assign different quantities to individual models using a simple text file
 * Generates G-code for every successfully processed model
-* Produces a production summary spreadsheet (`Results.csv`)
-* Calculates total print time, setup time, and material usage for the entire batch
-* Efficiently processes large batches without excessive memory usage
+* Produces a comprehensive `results.csv` production report
+* Calculates production time, setup overhead, and material usage for the entire batch
+* Generates automatic subfolder subtotals for organized multi-project batches
+* Optional Performance Mode for improved responsiveness during very large batch analyses
+* Continues processing remaining models even if individual files fail
 
 ---
 
@@ -41,19 +43,17 @@ Before using OrcaBatchAnalyzer, install:
 
 ## 1. Open PowerShell
 
-Press **Win + X** and choose **Windows PowerShell** or **Terminal**.
+Press **Win + X** and choose **Terminal** or **Windows PowerShell**.
 
 ---
 
 ## 2. Clone the repository
 
-Run:
-
 ```powershell
 git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git
 ```
 
-If you already cloned the repository without the submodule, run:
+If you already cloned the repository without the required submodule, initialize it by running:
 
 ```powershell
 git submodule update --init --recursive
@@ -93,27 +93,36 @@ If everything is installed correctly, the OrcaBatchAnalyzer window will open.
 
 ---
 
+## * One click install
+
+```powershell
+git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git && cd OrcaBatchAnalyzer && python app.py
+```
+
+If everything is installed correctly, the OrcaBatchAnalyzer window will open.
+
+---
+
 # First-Time Setup
 
-The first time the application starts:
+The first time the application starts it will automatically:
 
-1. It automatically searches for your OrcaSlicer installation.
-2. It automatically loads your available:
+* Detect your OrcaSlicer installation
+* Load your available printer profiles
+* Load your available process profiles
+* Load your available filament profiles
 
-   * Printer profiles
-   * Process profiles
-   * Filament profiles
-3. Select the profiles you wish to use.
+Simply select the profiles you wish to use.
 
-No profile export or additional configuration is required.
+No additional profile export or configuration is required.
 
 ---
 
 # Using OrcaBatchAnalyzer
 
-## Step 1
+## Step 1 — Select Profiles
 
-Choose your:
+Choose the desired:
 
 * Printer
 * Process
@@ -123,46 +132,42 @@ from the dropdown menus.
 
 ---
 
-## Step 2
+## Step 2 — Select Input
 
-Select your input.
+Choose either:
 
-You may choose:
-
-* a single STL file, or
-* a folder containing STL files.
+* A single STL file
+* A folder containing STL files
 
 Folders are searched recursively.
 
 ---
 
-## Step 3
-
-Choose how quantities should be assigned.
+## Step 3 — Choose a Quantity Strategy
 
 ### Flat Multiplier
 
-Every model receives the same quantity.
+Apply the same quantity to every discovered model.
 
 Example:
 
-```
+```text
 Quantity = 5
 
 100 STL files
 
 ↓
 
-500 total printed parts
+500 total calculated parts
 ```
 
 ---
 
 ### Manifest File
 
-Place a file named:
+For different quantities per model, place a file named:
 
-```
+```text
 quantities.txt
 ```
 
@@ -180,13 +185,23 @@ Models not listed automatically default to a quantity of **1**.
 
 ---
 
-## Step 4
+## Step 4 — Select an Output Folder
 
-Choose an output folder.
+Choose where generated G-code and reports should be saved.
 
 ---
 
-## Step 5
+## Step 5 (Optional) — Enable Performance Mode
+
+Performance Mode is recommended for very large jobs (approximately 200+ STL files).
+
+When enabled, the application reduces unnecessary UI updates during processing to improve responsiveness and periodically reclaims unused memory while the batch is running.
+
+The progress indicators remain active while processing continues normally.
+
+---
+
+## Step 6 — Start Processing
 
 Click:
 
@@ -194,47 +209,74 @@ Click:
 
 The application will automatically:
 
-* prepare the profiles
-* slice every model
-* calculate production statistics
-* generate the final report
+* Prepare the selected profiles
+* Slice every model
+* Generate G-code
+* Parse print statistics
+* Build the production report
 
 ---
 
 # Output
 
-The selected output directory will contain:
+The selected output directory contains:
 
 ```text
 Output/
-
-├── Results.csv
+├── results.csv
 └── Gcode/
+    ├── Model_A.gcode
+    ├── Model_B.gcode
+    └── ...
 ```
 
-`Results.csv` includes:
+## `results.csv`
 
-* Model name
+Each processed model includes:
+
+* Model Name
 * Quantity
-* Estimated slicer print time
-* Machine setup time
-* Total unit time
-* Total production time
-* Total filament required (grams)
-* Processing status
+* Slicer Print Time
+* Machine Setup Time
+* Total Unit Time
+* Scaled Total Production Time
+* Total Filament (g)
+* Status
 
-A final **TOTALS** row summarizes:
+If models are organized into subfolders, OrcaBatchAnalyzer automatically inserts subtotal rows for each folder.
 
-* Total models
-* Total quantity
+A final **TOTALS** row summarizes the complete production run, including:
+
+* Total models processed
+* Total quantity requested
 * Total slicer time
 * Total setup time
 * Total production time
 * Total filament required
+* Overall processing success
 
 ---
 
 # Troubleshooting
+
+## Slicing completed but no G-code was generated
+`[!] Slicing conversion failed` or `CLI error`
+
+OrcaSlicer's command-line interface may reject a model without displaying a graphical error message.
+
+Common causes include:
+
+* The model exceeds the printer's build volume.
+* The STL contains multiple independent bodies that require splitting.
+* The model contains non-manifold or otherwise invalid geometry.
+
+To diagnose the issue:
+
+1. Open the model manually in OrcaSlicer using the same printer, process, and filament profiles.
+2. Check for warnings or repair prompts.
+3. Repair the model if necessary, then rerun the analysis.
+
+---
 
 ## `python` is not recognized
 
@@ -262,46 +304,27 @@ Restart PowerShell after installation.
 
 ---
 
-## The application cannot find OrcaSlicer
+## OrcaSlicer cannot be found
 
-Install OrcaSlicer normally and launch the application again.
+Install OrcaSlicer normally and restart the application.
 
-If automatic detection fails, browse to:
+If automatic detection fails, manually browse to:
 
-```
+```text
 C:\Program Files\OrcaSlicer\orca-slicer.exe
 ```
 
 ---
 
-## The application reports missing submodules
+## Missing submodule
 
-Run:
+If the application reports missing files after cloning, run:
 
 ```powershell
 git submodule update --init --recursive
 ```
 
 Then restart the application.
-
----
-
-# Current Status
-
-OrcaBatchAnalyzer is under active development.
-
-Current functionality includes:
-
-* Automatic OrcaSlicer detection
-* Automatic profile discovery
-* Native OrcaSlicer CLI integration
-* Batch STL processing
-* Recursive folder processing
-* Flat and manifest quantity strategies
-* Automatic model orientation
-* Production summary generation
-
-Future updates will focus on additional print-setting overrides, expanded reporting, standalone Windows releases, and further workflow improvements.
 
 ---
 
@@ -315,3 +338,9 @@ When reporting an issue, please include:
 * Python version
 * Windows version
 * Steps to reproduce the issue
+
+---
+
+# License
+
+A project license will be selected and added before the first public release.
