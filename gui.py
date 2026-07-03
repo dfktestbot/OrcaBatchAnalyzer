@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
-import threading  # Added for multi-threading execution
+import threading
 import config
 from core.bundle import OrcaProfileManager
 
@@ -11,8 +11,8 @@ class AnalyzerGUI(tk.Tk):
         self.run_pipeline_callback = run_pipeline_callback
         
         self.title("Orca Batch Analyzer")
-        self.geometry("680x640") # Bumped height slightly to accommodate progress bar
-        self.minsize(650, 580)
+        self.geometry("680x660") 
+        self.minsize(650, 600)
         
         self.style = ttk.Style(self)
         self.style.theme_use('vista' if 'vista' in self.style.theme_names() else 'default')
@@ -28,6 +28,7 @@ class AnalyzerGUI(tk.Tk):
         
         self.quantity_mode = tk.StringVar(value="Flat Multiplier")
         self.flat_quantity = tk.IntVar(value=1)
+        self.performance_mode = tk.BooleanVar(value=False) # Performance optimization flag
         
         self._build_ui()
         self._auto_load_system_profiles()
@@ -83,17 +84,22 @@ class AnalyzerGUI(tk.Tk):
         self.ent_flat_qty = ttk.Entry(self.profile_frame, textvariable=self.flat_quantity, width=10)
         self.ent_flat_qty.grid(row=4, column=1, sticky=tk.W, pady=4, padx=5)
 
-        # --- New Section: Real-Time Progress Bar Layout ---
+        # Optimization Checkbox
+        self.chk_perf = ttk.Checkbutton(self.profile_frame, text="Optimize System Resources (Performance Mode - Suspends Live Logs)", variable=self.performance_mode)
+        self.chk_perf.grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=6, padx=2)
+
+        # --- Section 3: Stationary Progress Interface ---
         self.progress_frame = ttk.Frame(main_frame)
-        self.progress_frame.pack(fill=tk.X, pady=5)
+        self.progress_frame.pack(fill=tk.X, pady=6)
         
-        self.lbl_progress_txt = ttk.Label(self.progress_frame, text="Status: Idle")
-        self.lbl_progress_txt.pack(side=tk.LEFT, padx=2)
+        # Text alignment sitting above guarantees the bar never shifts width dynamically
+        self.lbl_progress_txt = ttk.Label(self.progress_frame, text="Status: Idle", font=('TkDefaultFont', 9, 'bold'))
+        self.lbl_progress_txt.pack(anchor=tk.W, pady=2)
         
         self.progress_bar = ttk.Progressbar(self.progress_frame, orient=tk.HORIZONTAL, mode='determinate')
-        self.progress_bar.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+        self.progress_bar.pack(fill=tk.X, expand=True)
 
-        # --- Section 3: Status Console ---
+        # --- Section 4: Status Console ---
         console_frame = ttk.LabelFrame(main_frame, text=" Execution Progress Logs ", padding="5")
         console_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
@@ -108,19 +114,20 @@ class AnalyzerGUI(tk.Tk):
         self.btn_run = ttk.Button(main_frame, text="START PROCESSING BATCH ANALYSIS", command=self._trigger_processing)
         self.btn_run.pack(fill=tk.X, pady=5, ipady=5)
 
-    def log(self, message: str):
-        """Thread-safe logging utility."""
+    def log(self, message: str, override_perf: bool = False):
+        """Logs output to the screen, respects Performance Mode settings."""
+        if self.performance_mode.get() and not override_perf:
+            return
         self.txt_log.configure(state=tk.NORMAL)
         self.txt_log.insert(tk.END, message + "\n")
         self.txt_log.see(tk.END)
         self.txt_log.configure(state=tk.DISABLED)
 
     def update_progress(self, current: int, total: int, text: str):
-        """Allows background worker threads to smoothly update progress tracking elements."""
         self.progress_bar['maximum'] = total
         self.progress_bar['value'] = current
         percent = (current / total) * 100 if total > 0 else 0
-        self.lbl_progress_txt.configure(text=f"{text} ({current}/{total} - {percent:.1f}%)")
+        self.lbl_progress_txt.configure(text=f"[{current}/{total} - {percent:.1f}%]  {text}")
 
     def _toggle_qty_visibility(self, event=None):
         if self.quantity_mode.get() == "Flat Multiplier":
@@ -129,7 +136,7 @@ class AnalyzerGUI(tk.Tk):
         else:
             self.lbl_flat_qty.grid_remove()
             self.ent_flat_qty.grid_remove()
-            self.log("[NOTE] Manifest Mode activated. Ensure 'quantities.txt' is in your target input folder.")
+            self.log("[NOTE] Manifest Mode activated. Ensure 'quantities.txt' is in your target input folder.", override_perf=True)
 
     def _browse_orca(self):
         path = filedialog.askopenfilename(filetypes=[("Executables", "*.exe")])
@@ -162,9 +169,9 @@ class AnalyzerGUI(tk.Tk):
             if profile_data["process"]: self.cb_process.current(0)
             if profile_data["filament"]: self.cb_filament.current(0)
             
-            self.log("[✓] Local printer profiles dynamically synchronized.")
+            self.log("[✓] Local printer profiles dynamically synchronized.", override_perf=True)
         except Exception as e:
-            self.log(f"[!] Profile Sync Failure: {e}")
+            self.log(f"[!] Profile Sync Failure: {e}", override_perf=True)
 
     def _trigger_processing(self):
         if not self.orca_exe_path.get() or not self.input_path.get():
@@ -182,7 +189,6 @@ class AnalyzerGUI(tk.Tk):
         config.OUTPUT_DIR = Path(self.output_dir.get())
         config.GCODE_DIR = config.OUTPUT_DIR / "Gcode"
         
-        # Spawning workflow loops onto an independent background daemon thread prevents UI hang completely
         worker_thread = threading.Thread(
             target=self.run_pipeline_callback, 
             args=(self,), 
