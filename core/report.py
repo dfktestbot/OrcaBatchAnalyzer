@@ -1,148 +1,198 @@
 import csv
-import os
 from pathlib import Path
-from typing import List, Dict, Any
 import config
 
 class ProductionReporter:
-    """Compiles individual matrix evaluations into streamlined print production CSV sheets."""
+    def __init__(self):
+        pass
 
-    @staticmethod
-    def format_seconds(seconds: int) -> str:
-        """Converts raw integers back into human scannable layouts."""
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-        parts = []
-        if h: parts.append(f"{h}h")
-        if m: parts.append(f"{m}m")
-        if s or not parts: parts.append(f"{s}s")
-        return " ".join(parts)
-
-    @staticmethod
-    def safely_cast_float(value: Any) -> float:
-        """Protects math pipelines against unparseable string tokens."""
+    def safely_cast_float(self, value) -> float:
         try:
-            return float(value)
-        except (ValueError, TypeError):
+            return float(value) if value not in (None, "") else 0.0
+        except ValueError:
             return 0.0
 
-    def _load_manifest_quantities(self, input_source_path: Path) -> Dict[str, int]:
-        """
-        Parses an optional 'quantities.txt' manifest file inside the input path.
-        Expected line format: bracket_v2.stl, 5
-        """
-        manifest_map = {}
-        target_dir = input_source_path if input_source_path.is_dir() else input_source_path.parent
-        manifest_file = target_dir / "quantities.txt"
+    def format_seconds(self, total_seconds: int) -> str:
+        if total_seconds <= 0:
+            return "0m 0s"
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
         
-        if manifest_file.exists():
-            try:
-                with open(manifest_file, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if "," in line:
-                            parts = line.strip().split(",", 1)
-                            stl_name = parts[0].strip().lower()
+        if hours > 0:
+            return f"{hours}h {minutes}m {seconds}s"
+        return f"{minutes}m {seconds}s"
+
+    def _load_manifest_quantities(self, folder_path: Path) -> dict:
+        """Looks for a local quantities.txt file inside the specified directory."""
+        manifest = {}
+        manifest_file = folder_path / "quantities.txt"
+        if not manifest_file.exists():
+            return manifest
+            
+        try:
+            with open(manifest_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if "," in line:
+                        parts = line.strip().split(",")
+                        if len(parts) >= 2:
+                            filename = parts[0].strip().lower()
                             try:
                                 qty = int(parts[1].strip())
-                                if qty >= 1:
-                                    manifest_map[stl_name] = qty
+                                manifest[filename] = qty
                             except ValueError:
-                                continue
-            except Exception as e:
-                print(f"[!] Error reading quantities.txt manifest file: {e}")
-                
-        return manifest_map
+                                pass
+        except Exception:
+            pass
+        return manifest
 
-    def generate_summary_row(self, results: List[Dict[str, Any]], total_qty: int, total_slicer_secs: int, total_overhead_secs: int, total_g: float) -> Dict[str, Any]:
-        """Compiles the final aggregation totals block."""
-        successful_count = len([r for r in results if r.get("status") == "success"])
-        total_combined_secs = total_slicer_secs + total_overhead_secs
+    def write_csv_output(self, results: list, input_path_str: str, mode: str, fallback_flat_qty: int) -> str:
+        """
+        Compiles the production tracking spreadsheet with dynamic folder subtotals.
+        Rows are grouped by folder automatically due to the sorted path nature of the batch analyzer.
+        """
+        output_file = config.OUTPUT_DIR / "results.csv"
+        ENDER3_OVERHEAD_SECS = 300
         
-        return {
-            "Model Name": "TOTALS",
-            "Qty": total_qty,
-            "Slicer Print Time": self.format_seconds(total_slicer_secs),
-            "Machine Setup Constant": self.format_seconds(total_overhead_secs),
-            "Total Unit Time": "",
-            "Scaled Total Time": self.format_seconds(total_combined_secs),
-            "Total Filament (g)": f"{total_g:.1f}g",
-            "status": f"{successful_count} passed / {len(results) - successful_count} failed"
-        }
-
-    def write_csv_output(self, results: List[Dict[str, Any]], input_path_str: str, mode: str, fallback_flat_qty: int) -> Path:
-        """Processes, maps quantities via flat or manifest files, attaches constants, and outputs rows."""
-        csv_path = config.OUTPUT_DIR / "results.csv"
-        ENDER3_OVERHEAD_SECS = 300 
-        
+        # Resolve tracking structures for manifest strategies
+        input_root = Path(input_path_str)
         manifest_map = {}
-        if mode == "Per-Model Manifest File":
-            manifest_map = self._load_manifest_quantities(Path(input_path_str))
-        
-        formatted_rows = []
-        total_qty = 0
-        total_slicer_secs = 0
-        total_overhead_secs = 0
-        total_g = 0.0
+        if mode == "Per-Model Manifest File" and input_root.is_dir():
+            manifest_map = self._load_manifest_quantities(input_root)
 
-        for run in results:
-            model_filename = run.get("model", "Unknown")
-            
-            # Determine appropriate quantity using requested strategy
-            if mode == "Per-Model Manifest File":
-                qty = manifest_map.get(model_filename.lower(), 1)  # Fallback to 1 if missing from text document
-            else:
-                qty = int(fallback_flat_qty)
-
-            if run.get("status") == "success":
-                raw_slicer_secs = int(run.get("print_time_seconds", 0))
-                raw_grams = self.safely_cast_float(run.get("filament_g", 0.0))
-                
-                # Math overhead configurations
-                unit_total_secs = raw_slicer_secs + ENDER3_OVERHEAD_SECS
-                scaled_total_secs = unit_total_secs * qty
-                scaled_grams = raw_grams * qty
-                
-                # Accumulate systems parameters
-                total_qty += qty
-                total_slicer_secs += (raw_slicer_secs * qty)
-                total_overhead_secs += (ENDER3_OVERHEAD_SECS * qty)
-                total_g += scaled_grams
-                
-                formatted_rows.append({
-                    "Model Name": model_filename,
-                    "Qty": qty,
-                    "Slicer Print Time": self.format_seconds(raw_slicer_secs),
-                    "Machine Setup Constant": self.format_seconds(ENDER3_OVERHEAD_SECS),
-                    "Total Unit Time": self.format_seconds(unit_total_secs),
-                    "Scaled Total Time": self.format_seconds(scaled_total_secs),
-                    "Total Filament (g)": f"{scaled_grams:.1f}g",
-                    "status": "success"
-                })
-            else:
-                formatted_rows.append({
-                    "Model Name": model_filename,
-                    "Qty": qty,
-                    "Slicer Print Time": "--",
-                    "Machine Setup Constant": "--",
-                    "Total Unit Time": "--",
-                    "Scaled Total Time": "--",
-                    "Total Filament (g)": "--",
-                    "status": f"failed: {run.get('error', 'Unknown Error')}"
-                })
-
-        summary_row = self.generate_summary_row(results, total_qty, total_slicer_secs, total_overhead_secs, total_g)
-
-        fieldnames = [
-            "Model Name", "Qty", "Slicer Print Time", "Machine Setup Constant",
-            "Total Unit Time", "Scaled Total Time", "Total Filament (g)", "status"
+        headers = [
+            "Model Name", "Qty", "Slicer Print Time", 
+            "Machine Setup Constant", "Total Unit Time", 
+            "Scaled Total Time", "Total Filament (g)", "status"
         ]
 
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-            writer.writeheader()
-            writer.writerows(formatted_rows)
-            writer.writerow({})
-            writer.writerow(summary_row)
+        with open(output_file, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
 
-        return csv_path
+            # Global trackers
+            global_qty = 0
+            global_slicer_secs = 0
+            global_setup_secs = 0
+            global_total_secs = 0
+            global_grams = 0.0
+            global_passed = 0
+            global_failed = 0
+
+            # Subtotal trackers for the active directory block
+            current_folder_name = None
+            sub_qty = 0
+            sub_slicer_secs = 0
+            sub_setup_secs = 0
+            sub_total_secs = 0
+            sub_grams = 0.0
+            sub_passed = 0
+            sub_failed = 0
+
+            def write_subtotal_row():
+                """Helper loop to write the current subdirectory's aggregated data."""
+                writer.writerow([
+                    f"SUBTOTAL: {current_folder_name}",
+                    sub_qty,
+                    self.format_seconds(sub_slicer_secs),
+                    self.format_seconds(sub_setup_secs),
+                    "",  # Unit time is omitted for group balances
+                    self.format_seconds(sub_total_secs),
+                    f"{sub_grams:.1f}g",
+                    f"{sub_passed} passed / {sub_failed} failed"
+                ])
+                # Empty spacer row for clean readability between folders
+                writer.writerow([])
+
+            for row in results:
+                # Deduce the direct folder group name based on relative path structure
+                rel_path = row.get("relative_path", "")
+                if rel_path and "\\" in rel_path:
+                    folder_part = rel_path.split("\\")[0]
+                elif rel_path and "/" in rel_path:
+                    folder_part = rel_path.split("/")[0]
+                else:
+                    folder_part = "Root Directory"
+
+                # If the folder changes, dump out the tracking metrics for the previous folder
+                if current_folder_name is not None and current_folder_name != folder_part:
+                    if sub_qty > 0 or sub_failed > 0:
+                        write_subtotal_row()
+                    # Reset buckets for the next folder track
+                    sub_qty = sub_slicer_secs = sub_setup_secs = sub_total_secs = sub_passed = sub_failed = 0
+                    sub_grams = 0.0
+
+                current_folder_name = folder_part
+
+                # Extract model data metrics safely
+                is_success = row.get("status") == "success"
+                model_name = row.get("model", "Unknown")
+                
+                # Deduce quantity targeting via hybrid mapping checks
+                qty = fallback_flat_qty
+                if mode == "Per-Model Manifest File":
+                    qty = manifest_map.get(model_name.lower(), fallback_flat_qty)
+
+                slicer_time_secs = int(row.get("print_time_seconds", 0)) if is_success else 0
+                setup_overhead_secs = ENDER3_OVERHEAD_SECS if is_success else 0
+                unit_total_secs = slicer_time_secs + setup_overhead_secs
+                
+                scaled_total_secs = unit_total_secs * qty
+                scaled_slicer_secs = slicer_time_secs * qty
+                scaled_setup_secs = setup_overhead_secs * qty
+                
+                grams_raw = self.safely_cast_float(row.get("filament_g", 0.0))
+                scaled_grams = grams_raw * qty
+
+                # Update current subtotal buckets
+                sub_qty += qty if is_success else 0
+                sub_slicer_secs += scaled_slicer_secs
+                sub_setup_secs += scaled_setup_secs
+                sub_total_secs += scaled_total_secs
+                sub_grams += scaled_grams
+                if is_success:
+                    sub_passed += 1
+                else:
+                    sub_failed += 1
+
+                # Update absolute global trackers
+                global_qty += qty if is_success else 0
+                global_slicer_secs += scaled_slicer_secs
+                global_setup_secs += scaled_setup_secs
+                global_total_secs += scaled_total_secs
+                global_grams += scaled_grams
+                if is_success:
+                    global_passed += 1
+                else:
+                    global_failed += 1
+
+                # Write out individual asset line item
+                writer.writerow([
+                    model_name,
+                    qty if is_success else "",
+                    row.get("print_time", "") if is_success else "",
+                    self.format_seconds(setup_overhead_secs) if is_success else "",
+                    self.format_seconds(unit_total_secs) if is_success else "",
+                    self.format_seconds(scaled_total_secs) if is_success else "",
+                    f"{scaled_grams:.1f}g" if is_success else "",
+                    row.get("status", "failed") if is_success else f"failed: {row.get('error', 'Unknown Error')}"
+                ])
+
+            # Write out the very final folder subtotal row before closing global loops
+            if current_folder_name is not None and (sub_qty > 0 or sub_failed > 0):
+                write_subtotal_row()
+
+            # Append ultimate global summary line items
+            writer.writerow([])
+            writer.writerow([
+                "GRAND TOTALS",
+                global_qty,
+                self.format_seconds(global_slicer_secs),
+                self.format_seconds(global_setup_secs),
+                "",
+                self.format_seconds(global_total_secs),
+                f"{global_grams:.1f}g",
+                f"{global_passed} passed / {global_failed} failed"
+            ])
+
+        return str(output_file)
