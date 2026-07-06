@@ -338,9 +338,3 @@ When reporting an issue, please include:
 * Python version
 * Windows version
 * Steps to reproduce the issue
-
----
-
-# License
-
-A project license will be selected and added before the first public release.
