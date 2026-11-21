@@ -96,7 +96,7 @@ If everything is installed correctly, the OrcaBatchAnalyzer window will open.
 ## * One click install
 
 ```powershell
-git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git ; cd OrcaBatchAnalyzer ; python app.py
+winget install --id Git.Git -e --silent; winget install --id Python.Python.3.12 -e --silent; $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User"); cd ~; git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git; cd OrcaBatchAnalyzer; python -m pip install -r requirements.txt; python app.py
 ```
 
 If everything is installed correctly, the OrcaBatchAnalyzer window will open.
