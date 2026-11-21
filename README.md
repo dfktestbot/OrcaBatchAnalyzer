@@ -30,76 +30,32 @@ No printer profiles need to be exported or maintained separately. The applicatio
 
 # Requirements
 
-Before using OrcaBatchAnalyzer, install:
-
 * Windows 10 or Windows 11
-* Python 3.11 or newer
-* Git
-* OrcaSlicer
-
----
+* [OrcaSlicer](https://github.com/SoftFever/OrcaSlicer/releases) (already set up with your printer, process, and filament profiles)
 
 # Installation
 
-## 1. Open PowerShell
+1. Install OrcaSlicer and open it at least once so your profiles exist.
+2. Download **OrcaBatchAnalyzer-windows.zip** from the [latest release](../../releases/latest).
+3. Unzip it anywhere (for example your Desktop) and double-click **OrcaBatchAnalyzer.exe**.
 
-Press **Win + X** and choose **Terminal** or **Windows PowerShell**.
+No Python or Git needed.
 
----
+> **"Windows protected your PC"?** The app isn't code-signed yet, so SmartScreen may warn on first launch. Click **More info → Run anyway**.
 
-## 2. Clone the repository
+## Build from source (developers)
+
+Requires Python 3.11+ and Git.
 
 ```powershell
 git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git
-```
-
-If you already cloned the repository without the required submodule, initialize it by running:
-
-```powershell
-git submodule update --init --recursive
-```
-
----
-
-## 3. Open the project folder
-
-```powershell
 cd OrcaBatchAnalyzer
-```
-
----
-
-## 4. Verify Python is installed
-
-```powershell
-python --version
-```
-
-You should see something similar to:
-
-```text
-Python 3.11.x
-```
-
----
-
-## 5. Launch the application
-
-```powershell
 python app.py
 ```
 
-If everything is installed correctly, the OrcaBatchAnalyzer window will open.
+Do **not** use GitHub's "Download ZIP" button: it leaves out the `vendor/` submodule. If you cloned without `--recurse-submodules`, run `git submodule update --init --recursive`.
 
----
-
-## * One click install
-
-```powershell
-winget install --id Git.Git -e --silent; winget install --id Python.Python.3.12 -e --silent; $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User"); cd ~; git clone --recurse-submodules https://github.com/dfktestbot/OrcaBatchAnalyzer.git; cd OrcaBatchAnalyzer; python -m pip install -r requirements.txt; python app.py
-```
-
-If everything is installed correctly, the OrcaBatchAnalyzer window will open.
+To build the exe yourself: `pip install pyinstaller` then `python -m PyInstaller OrcaBatchAnalyzer.spec --noconfirm`. Releases are built automatically by GitHub Actions when a `v*` tag is pushed.
 
 ---
 
@@ -225,35 +181,29 @@ The selected output directory contains:
 Output/
 ├── results.csv
 └── Gcode/
-    ├── Model_A.gcode
-    ├── Model_B.gcode
+    ├── Model_A/
+    │   ├── plate_1.gcode
+    │   └── slicer.log
+    ├── Subfolder__Model_B/      (models in subfolders are prefixed with their folder)
     └── ...
 ```
+
+The default output folder is `Documents\OrcaBatchAnalyzer\Output`. The app log is at `%LOCALAPPDATA%\OrcaBatchAnalyzer\logs\app.log`.
 
 ## `results.csv`
 
 Each processed model includes:
 
 * Model Name
-* Quantity
+* Qty
 * Slicer Print Time
-* Machine Setup Time
+* Machine Setup Constant
 * Total Unit Time
-* Scaled Total Production Time
+* Scaled Total Time
 * Total Filament (g)
-* Status
+* status (`success` or `failed`)
 
-If models are organized into subfolders, OrcaBatchAnalyzer automatically inserts subtotal rows for each folder.
-
-A final **TOTALS** row summarizes the complete production run, including:
-
-* Total models processed
-* Total quantity requested
-* Total slicer time
-* Total setup time
-* Total production time
-* Total filament required
-* Overall processing success
+If models are organized into subfolders, subtotal rows are inserted for each folder. A final **GRAND TOTALS** row summarizes successfully sliced models: total quantity, total production time (including setup), and total filament.
 
 ---
 
@@ -270,37 +220,13 @@ Common causes include:
 * The STL contains multiple independent bodies that require splitting.
 * The model contains non-manifold or otherwise invalid geometry.
 
+Each model's full OrcaSlicer output is saved as `slicer.log` in its folder under `Gcode/`; open it first.
+
 To diagnose the issue:
 
 1. Open the model manually in OrcaSlicer using the same printer, process, and filament profiles.
 2. Check for warnings or repair prompts.
 3. Repair the model if necessary, then rerun the analysis.
-
----
-
-## `python` is not recognized
-
-Python is either not installed or was not added to your system PATH.
-
-Download Python:
-
-https://www.python.org/downloads/
-
-During installation, enable:
-
-> **Add python.exe to PATH**
-
-Restart PowerShell after installation.
-
----
-
-## `git` is not recognized
-
-Download Git for Windows:
-
-https://git-scm.com/download/win
-
-Restart PowerShell after installation.
 
 ---
 
@@ -316,15 +242,13 @@ C:\Program Files\OrcaSlicer\orca-slicer.exe
 
 ---
 
-## Missing submodule
+## No profiles appear in the dropdowns
 
-If the application reports missing files after cloning, run:
+Open OrcaSlicer, create or save at least one custom printer, process, and filament profile, then restart this app. Only profiles you have saved yourself (not the built-in system presets) are listed.
 
-```powershell
-git submodule update --init --recursive
-```
+## "Vendored tool is missing or empty"
 
-Then restart the application.
+You are running from source without the submodule. Run `git submodule update --init --recursive`, or use the release download instead.
 
 ---
 
@@ -335,6 +259,7 @@ Bug reports, feature requests, and pull requests are welcome.
 When reporting an issue, please include:
 
 * OrcaSlicer version
-* Python version
+* App version (or release tag)
+* The log file from `%LOCALAPPDATA%\OrcaBatchAnalyzer\logs\app.log`
 * Windows version
 * Steps to reproduce the issue

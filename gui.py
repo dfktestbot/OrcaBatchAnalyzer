@@ -1,14 +1,35 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import logging
+import queue
 import threading
+from dataclasses import dataclass
 import config
 from core.bundle import OrcaProfileManager
+
+_log = logging.getLogger(config.APP_NAME)
+
+
+@dataclass
+class BatchSettings:
+    """Snapshot of every UI value, taken on the main thread so the worker never touches Tk variables."""
+    orca_exe: str
+    input_path: str
+    quantity_mode: str
+    flat_quantity: int
+    performance_mode: bool
+    printer_profile: str
+    process_profile: str
+    filament_profile: str
+
 
 class AnalyzerGUI(tk.Tk):
     def __init__(self, run_pipeline_callback):
         super().__init__()
         self.run_pipeline_callback = run_pipeline_callback
+        self._ui_queue = queue.Queue()   # worker thread -> main thread messages
+        self._perf_active = False
         
         self.title("Orca Batch Analyzer")
         self.geometry("680x660") 
@@ -32,6 +53,9 @@ class AnalyzerGUI(tk.Tk):
         
         self._build_ui()
         self._auto_load_system_profiles()
+        self._drain_ui_queue()
+        if not self.orca_exe_path.get():
+            self.log("[!] OrcaSlicer was not found automatically. Use Browse to select orca-slicer.exe.", override_perf=True)
         
     def _build_ui(self):
         main_frame = ttk.Frame(self, padding="15")
@@ -113,21 +137,62 @@ class AnalyzerGUI(tk.Tk):
         self.btn_run = ttk.Button(main_frame, text="START PROCESSING BATCH ANALYSIS", command=self._trigger_processing)
         self.btn_run.pack(fill=tk.X, pady=5, ipady=5)
 
+    # ---- thread-safe UI helpers (the batch runs in a worker thread) ----
+    def _call_on_main(self, fn, *args, **kwargs):
+        if threading.current_thread() is threading.main_thread():
+            fn(*args, **kwargs)
+        else:
+            self._ui_queue.put(lambda: fn(*args, **kwargs))
+
+    def _drain_ui_queue(self):
+        try:
+            while True:
+                job = self._ui_queue.get_nowait()
+                try:
+                    job()
+                except Exception:
+                    _log.exception("UI update failed")
+        except queue.Empty:
+            pass
+        self.after(100, self._drain_ui_queue)
+
     def log(self, message: str, override_perf: bool = False):
-        """Logs output to the screen, respects Performance Mode settings."""
-        print(message) 
-        if self.performance_mode.get() and not override_perf:
+        """Logs to the log file always, and to the on-screen console unless Performance Mode suppresses it."""
+        _log.info(message.strip())
+        if self._perf_active and not override_perf:
             return
+        self._call_on_main(self._append_log, message)
+
+    def _append_log(self, message: str):
         self.txt_log.configure(state=tk.NORMAL)
         self.txt_log.insert(tk.END, message + "\n")
         self.txt_log.see(tk.END)
         self.txt_log.configure(state=tk.DISABLED)
 
     def update_progress(self, current: int, total: int, text: str):
+        self._call_on_main(self._set_progress, current, total, text)
+
+    def _set_progress(self, current: int, total: int, text: str):
         self.progress_bar['maximum'] = total
         self.progress_bar['value'] = current
         percent = (current / total) * 100 if total > 0 else 0
         self.lbl_progress_txt.configure(text=f"[{current}/{total} - {percent:.1f}%]  {text}")
+
+    def show_info(self, title: str, message: str):
+        self._call_on_main(messagebox.showinfo, title, message)
+
+    def show_warning(self, title: str, message: str):
+        self._call_on_main(messagebox.showwarning, title, message)
+
+    def show_error(self, title: str, message: str):
+        self._call_on_main(messagebox.showerror, title, message)
+
+    def set_running(self, running: bool):
+        def apply():
+            self.btn_run.configure(state=tk.DISABLED if running else tk.NORMAL)
+            if not running:
+                self._perf_active = False
+        self._call_on_main(apply)
 
     def _toggle_qty_visibility(self, event=None):
         if self.quantity_mode.get() == "Flat Multiplier":
@@ -185,13 +250,31 @@ class AnalyzerGUI(tk.Tk):
                 messagebox.showwarning("Invalid Input", "Please provide a valid flat quantity multiplier (Minimum 1).")
                 return
         
+        if not Path(self.orca_exe_path.get()).is_file():
+            messagebox.showwarning("OrcaSlicer Not Found", "The OrcaSlicer executable path is not valid. Use Browse to select orca-slicer.exe.")
+            return
+        if not (self.printer_profile.get() and self.process_profile.get() and self.filament_profile.get()):
+            messagebox.showwarning("Missing Profiles", "Select a printer, process and filament profile first.")
+            return
+
+        settings = BatchSettings(
+            orca_exe=self.orca_exe_path.get(),
+            input_path=self.input_path.get(),
+            quantity_mode=self.quantity_mode.get(),
+            flat_quantity=self.flat_quantity.get() if self.quantity_mode.get() == "Flat Multiplier" else 1,
+            performance_mode=self.performance_mode.get(),
+            printer_profile=self.printer_profile.get(),
+            process_profile=self.process_profile.get(),
+            filament_profile=self.filament_profile.get(),
+        )
+        self._perf_active = settings.performance_mode
         self.btn_run.configure(state=tk.DISABLED)
         config.OUTPUT_DIR = Path(self.output_dir.get())
         config.GCODE_DIR = config.OUTPUT_DIR / "Gcode"
-        
+
         worker_thread = threading.Thread(
-            target=self.run_pipeline_callback, 
-            args=(self,), 
+            target=self.run_pipeline_callback,
+            args=(self, settings),
             daemon=True
         )
         worker_thread.start()

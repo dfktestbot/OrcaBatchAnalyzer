@@ -1,0 +1,58 @@
+name: Build release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:   # run manually from the Actions tab to test a build without publishing
+
+permissions:
+  contents: write      # needed to attach the zip to a release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path requirements.txt) { python -m pip install -r requirements.txt }
+          # The vendored tool's own dependencies must be installed so PyInstaller can bundle them
+          $vendorReq = "vendor/orcaslicer-filament-tool/requirements.txt"
+          if (Test-Path $vendorReq) { python -m pip install -r $vendorReq }
+          python -m pip install pyinstaller
+
+      - name: Build
+        run: python -m PyInstaller OrcaBatchAnalyzer.spec --noconfirm
+
+      - name: Self-test the built exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\OrcaBatchAnalyzer\OrcaBatchAnalyzer.exe" `
+               -ArgumentList "--selftest", "$PWD\selftest.txt" -Wait -PassThru
+          if (Test-Path selftest.txt) { Get-Content selftest.txt }
+          if ($p.ExitCode -ne 0) { throw "Self-test failed (exit code $($p.ExitCode))" }
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\OrcaBatchAnalyzer -DestinationPath OrcaBatchAnalyzer-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OrcaBatchAnalyzer-windows
+          path: OrcaBatchAnalyzer-windows.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OrcaBatchAnalyzer-windows.zip
+          generate_release_notes: true

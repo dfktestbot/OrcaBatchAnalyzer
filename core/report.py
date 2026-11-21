@@ -31,8 +31,11 @@ class ProductionReporter:
             return manifest
             
         try:
-            with open(manifest_file, "r", encoding="utf-8") as f:
+            with open(manifest_file, "r", encoding="utf-8-sig") as f:  # utf-8-sig tolerates a Notepad BOM
                 for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
                     if "," in line:
                         parts = line.strip().split(",")
                         if len(parts) >= 2:
@@ -73,7 +76,7 @@ class ProductionReporter:
                 root_files.append(result)
     
         # 2. Compile and write the structural layout
-        with open(output_csv_path, mode='w', newline='', encoding='utf-8') as f:
+        with open(output_csv_path, mode='w', newline='', encoding='utf-8-sig') as f:  # BOM so Excel reads UTF-8 names correctly
             writer = csv.writer(f)
             
             # Standard Column Headers
